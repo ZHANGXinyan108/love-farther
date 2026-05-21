@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes">
+  <title>💞 Couple Space · Together</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react@18.2.0/umd/react.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/react-dom@18.2.0/umd/react-dom.development.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@babel/standalone/babel.min.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-database-compat.js"></script>
+  <style>
+    body { -webkit-tap-highlight-color: transparent; background: linear-gradient(145deg, #fff9f0 0%, #ffe6f0 100%); }
+    button, a { cursor: pointer; }
+    input, textarea { font-size: 16px; }
+    /* 可爱滚动条 */
+    ::-webkit-scrollbar { width: 4px; }
+    ::-webkit-scrollbar-track { background: #ffe0e7; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb { background: #f9a8d4; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel" data-presets="react">
+
+    // ================= FIREBASE CONFIG (REPLACE WITH YOUR OWN) =================
+    const firebaseConfig = {
+      apiKey: "AIzaSyCRrXkEWvPXyYyiBl1ZWkyG9jjdDKwKEJM",
+      authDomain: "love-farther.firebaseapp.com",
+      databaseURL: "https://love-farther-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "love-farther",
+      storageBucket: "love-farther.firebasestorage.app",
+      messagingSenderId: "320335695741",
+      appId: "1:320335695741:web:ffca37f1053e0fe949c614"
+    };
+    if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+    const db = firebase.database();
+
+    // helpers
+    const genRoomCode = () => Math.random().toString(36).substring(2, 8).toUpperCase();
+    const getRoomFromUrl = () => new URLSearchParams(window.location.search).get('room');
+    const setRoomInUrl = (room) => {
+      const url = new URL(window.location);
+      url.searchParams.set('room', room);
+      window.history.replaceState({}, '', url);
+    };
+
+    const { useState, useEffect } = React;
+
+    // 默认空日程样例 (24h format)
+    const emptySchedule = () => [];
+
+    // 活动类型颜色 & 图标
+    const activityMeta = {
+      'sleep': { label: '😴 Sleep', color: '#b4d0e6' },
+      'study': { label: '📚 Study', color: '#c7e9b0' },
+      'fun': { label: '🎮 Fun', color: '#ffd6a5' },
+      'commute': { label: '🚗 Commute', color: '#ffb7b2' },
+      'other': { label: '✨ Other', color: '#e0bbff' }
+    };
+
+    // 登录/加入房间组件 (与原类似但全英文)
+    const JoinRoom = ({ onJoin }) => {
+      const [room, setRoom] = useState('');
+      const [myName, setMyName] = useState('');
+      const [loading, setLoading] = useState(false);
+
+      const handleJoin = async () => {
+        if (!room.trim() || !myName.trim()) { alert('Please fill both fields'); return; }
+        setLoading(true);
+        const roomRef = db.ref(`rooms/${room}`);
+        try {
+          const snap = await roomRef.once('value');
+          if (!snap.exists()) {
+            // init room
+            await roomRef.set({
+              members: { [myName]: { name: myName, joinedAt: Date.now() } },
+              messages: [],
+              createdAt: Date.now()
+            });
+            // init user data
+            await db.ref(`rooms/${room}/users/${myName}`).set({
+              schedule: [],
+              statsOverride: null,
+              partnerSince: Date.now()
+            });
+          } else {
+            const data = snap.val();
+            if (!data.members[myName]) {
+              await roomRef.child(`members/${myName}`).set({ name: myName, joinedAt: Date.now() });
+            }
+            // ensure user sub structure
+            const userRef = db.ref(`rooms/${room}/users/${myName}`);
+            const userSnap = await userRef.once('value');
+            if (!userSnap.exists()) {
+              await userRef.set({ schedule: [], statsOverride: null, partnerSince: Date.now() });
+            }
+          }
+          onJoin(room, myName);
+          setRoomInUrl(room);
+        } catch (err) { alert('Error joining room'); console.error(err); }
+        finally { setLoading(false); }
+      };
+
+      return (
+        <div className="min-h-screen flex items-center justify-center p-4">
+          <div className="bg-white/80 backdrop-blur-sm rounded-3xl shadow-2xl p-6 w-full max-w-md border border-pink-200">
+            <h1 className="text-3xl font-bold text-center text-pink-600 mb-2">🐻‍❄️ Couple Space</h1>
+            <p className="text-center text-gray-500 mb-6">Stay connected, grow together</p>
+            <div className="space-y-4">
+              <input type="text" value={myName} onChange={e=>setMyName(e.target.value)} placeholder="Your nickname" className="w-full border-2 border-pink-200 rounded-2xl p-3 focus:outline-none focus:border-pink-400" />
+              <div className="flex gap-2">
+                <input type="text" value={room} onChange={e=>setRoom(e.target.value.toUpperCase())} placeholder="Room code (6 chars)" maxLength="6" className="flex-1 border-2 border-pink-200 rounded-2xl p-3 uppercase focus:outline-none" />
+                <button onClick={()=>setRoom(genRoomCode())} className="bg-gray-200 px-4 rounded-2xl text-sm">Random</button>
+              </div>
+              <button onClick={handleJoin} disabled={loading} className="w-full bg-gradient-to-r from-pink-400 to-purple-400 text-white py-3 rounded-2xl font-bold shadow-md disabled:opacity-50">✨ Enter Space ✨</button>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // 主应用
+    const App = () => {
+      const [room, setRoom] = useState('');
+      const [myName, setMyName] = useState('');
+      const [joined, setJoined] = useState(false);
+
+      useEffect(() => {
+        const urlRoom = getRoomFromUrl();
+        if (urlRoom) setRoom(urlRoom);
+      }, []);
+
+      if (!joined) return <JoinRoom onJoin={(r,n)=>{ setRoom(r); setMyName(n); setJoined(true); }} />;
+      return <Main room={room} myName={myName} />;
+    };
+
+    // ================= 主界面 =================
+    const Main = ({ room, myName }) => {
+      const [members, setMembers] = useState([]);
+      const [otherName, setOtherName] = useState(null);
+      const [mySchedule, setMySchedule] = useState([]);
+      const [otherSchedule, setOtherSchedule] = useState([]);
+      const [messages, setMessages] = useState([]);
+      const [statsOverride, setStatsOverride] = useState(null);
+      const [partnerSince, setPartnerSince] = useState(null);
+      const [activeTab, setActiveTab] = useState('home'); // home, schedule, stats, chat, profile
+      const [currentTime, setCurrentTime] = useState(new Date());
+      const [editStatsMode, setEditStatsMode] = useState(false);
+      const [tempStats, setTempStats] = useState({ sleep:0, study:0, fun:0, commute:0, other:0 });
+
+      // 实时获取成员 & 对方
+      useEffect(() => {
+        const membersRef = db.ref(`rooms/${room}/members`);
+        const handler = membersRef.on('value', snap => {
+          const m = snap.val() || {};
+          const names = Object.keys(m);
+          setMembers(names);
+          const other = names.find(n => n !== myName);
+          setOtherName(other || null);
+        });
+        return () => membersRef.off('value', handler);
+      }, [room, myName]);
+
+      // 获取双方日程
+      useEffect(() => {
+        if (!room) return;
+        const mySchRef = db.ref(`rooms/${room}/users/${myName}/schedule`);
+        const myHandler = mySchRef.on('value', snap => setMySchedule(snap.val() || []));
+        return () => mySchRef.off('value', myHandler);
+      }, [room, myName]);
+
+      useEffect(() => {
+        if (!room || !otherName) return;
+        const otherSchRef = db.ref(`rooms/${room}/users/${otherName}/schedule`);
+        const otherHandler = otherSchRef.on('value', snap => setOtherSchedule(snap.val() || []));
+        return () => otherSchRef.off('value', otherHandler);
+      }, [room, otherName]);
+
+      // 获取聊天消息
+      useEffect(() => {
+        const msgRef = db.ref(`rooms/${room}/messages`);
+        const msgHandler = msgRef.on('value', snap => setMessages(snap.val() || []));
+        return () => msgRef.off('value', msgHandler);
+      }, [room]);
+
+      // 获取统计覆盖 & 绑定开始时间
+      useEffect(() => {
+        const userRef = db.ref(`rooms/${room}/users/${myName}`);
+        const statsHandler = userRef.on('value', snap => {
+          const data = snap.val() || {};
+          setStatsOverride(data.statsOverride || null);
+          setPartnerSince(data.partnerSince || Date.now());
+        });
+        return () => userRef.off('value', statsHandler);
+      }, [room, myName]);
+
+      // 时钟更新
+      useEffect(() => {
+        const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+        return () => clearInterval(timer);
+      }, []);
+
+      // 根据当前时间和日程获取当前活动
+      const getCurrentActivity = (schedule) => {
+        const now = currentTime;
+        const currentMinutes = now.getHours() * 60 + now.getMinutes();
+        for (let item of schedule) {
+          const [startH, startM] = item.start.split(':').map(Number);
+          const [endH, endM] = item.end.split(':').map(Number);
+          const startMin = startH*60 + startM;
+          const endMin = endH*60 + endM;
+          if (currentMinutes >= startMin && currentMinutes < endMin) {
+            return activityMeta[item.type]?.label || `📌 ${item.title}`;
+          }
+        }
+        return "💤 Free / Unplanned";
+      };
+
+      // 根据日程自动计算总时长（分钟）按类型
+      const computeStatsFromSchedule = (schedule) => {
+        const stats = { sleep:0, study:0, fun:0, commute:0, other:0 };
+        for (let item of schedule) {
+          const [startH, startM] = item.start.split(':').map(Number);
+          const [endH, endM] = item.end.split(':').map(Number);
+          let duration = (endH*60+endM) - (startH*60+startM);
+          if (duration < 0) duration += 24*60;
+          if (stats.hasOwnProperty(item.type)) stats[item.type] += duration;
+          else stats.other += duration;
+        }
+        return stats;
+      };
+
+      const myStats = statsOverride ? statsOverride : computeStatsFromSchedule(mySchedule);
+      const otherStats = computeStatsFromSchedule(otherSchedule);
+
+      // 修改统计覆盖
+      const saveStatsOverride = async () => {
+        await db.ref(`rooms/${room}/users/${myName}/statsOverride`).set(tempStats);
+        setStatsOverride(tempStats);
+        setEditStatsMode(false);
+      };
+
+      // 添加日程项 (简易弹窗)
+      const addScheduleItem = async (user, item) => {
+        const userRef = db.ref(`rooms/${room}/users/${user}/schedule`);
+        const current = user === myName ? mySchedule : otherSchedule;
+        const newList = [...current, item];
+        await userRef.set(newList);
+      };
+
+      // 删除日程
+      const deleteScheduleItem = async (user, index) => {
+        const userRef = db.ref(`rooms/${room}/users/${user}/schedule`);
+        const current = user === myName ? mySchedule : otherSchedule;
+        const newList = [...current];
+        newList.splice(index, 1);
+        await userRef.set(newList);
+      };
+
+      // 发送消息
+      const sendMessage = async (text) => {
+        if (!text.trim()) return;
+        const newMsg = { user: myName, text, timestamp: Date.now() };
+        const msgRef = db.ref(`rooms/${room}/messages`);
+        const snap = await msgRef.once('value');
+        let msgs = snap.val() || [];
+        msgs = [newMsg, ...msgs].slice(0, 100);
+        await msgRef.set(msgs);
+      };
+
+      // 修改绑定开始日期 (仅一次)
+      const [canEditSince, setCanEditSince] = useState(true);
+      const [newSinceDate, setNewSinceDate] = useState('');
+      const handleEditPartnerSince = async () => {
+        if (!canEditSince) { alert('You can only edit once.'); return; }
+        if (!newSinceDate) return;
+        const timestamp = new Date(newSinceDate).getTime();
+        if (isNaN(timestamp)) return;
+        await db.ref(`rooms/${room}/users/${myName}/partnerSince`).set(timestamp);
+        setPartnerSince(timestamp);
+        setCanEditSince(false);
+        // 标记已修改，存在本地或数据库，但为了简单，我们记在user下另一个字段
+        await db.ref(`rooms/${room}/users/${myName}/sinceEdited`).set(true);
+      };
+      useEffect(() => {
+        const fetchEditFlag = async () => {
+          const flagSnap = await db.ref(`rooms/${room}/users/${myName}/sinceEdited`).once('value');
+          if (flagSnap.exists()) setCanEditSince(false);
+        };
+        if (room && myName) fetchEditFlag();
+      }, [room, myName]);
+
+      // 渲染主页 (时间流逝)
+      const HomeView = () => (
+        <div className="space-y-5">
+          <div className="bg-white/70 backdrop-blur-sm rounded-3xl p-5 text-center shadow-sm border border-pink-100">
+            <div className="text-6xl font-mono text-purple-700">{currentTime.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</div>
+            <div className="text-gray-500 mt-1">{currentTime.toDateString()}</div>
+            <div className="mt-2 text-sm text-pink-400">⭐ Every moment together matters ⭐</div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="bg-gradient-to-br from-rose-50 to-pink-100 rounded-3xl p-4 shadow-md">
+              <div className="text-2xl font-bold text-pink-700">{myName}</div>
+              <div className="text-sm text-gray-600 mt-2">🕒 Currently:</div>
+              <div className="text-lg font-semibold mt-1">{getCurrentActivity(mySchedule)}</div>
+              <div className="mt-3 text-xs text-gray-400">💪 Keep going!</div>
+            </div>
+            <div className="bg-gradient-to-br from-blue-50 to-indigo-100 rounded-3xl p-4 shadow-md">
+              <div className="text-2xl font-bold text-indigo-700">{otherName || 'Partner'}</div>
+              <div className="text-sm text-gray-600 mt-2">🕒 Currently:</div>
+              <div className="text-lg font-semibold mt-1">{otherName ? getCurrentActivity(otherSchedule) : 'Waiting for partner...'}</div>
+              <div className="mt-3 text-xs text-gray-400">💖 Thinking of you</div>
+            </div>
+          </div>
+          <div className="bg-white/60 rounded-2xl p-3 text-center text-xs text-gray-500">✨ Double click on schedule items to delete ✨</div>
+        </div>
+      );
+
+      // 日程表页面 (双色时间轴)
+      const ScheduleView = () => {
+        const [newItem, setNewItem] = useState({ start: '09:00', end: '10:00', type: 'study', title: 'Learn' });
+        const handleAdd = () => {
+          if (!newItem.start || !newItem.end) return;
+          addScheduleItem(myName, { ...newItem, id: Date.now() });
+        };
+        const renderScheduleList = (name, schedule, isMe) => (
+          <div className="mb-6">
+            <h3 className={`font-bold text-lg ${isMe ? 'text-pink-600' : 'text-blue-600'} mb-2`}>{name}'s Schedule</h3>
+            {schedule.length === 0 && <div className="text-gray-400 text-sm">No entries yet. Add one below.</div>}
+            {schedule.map((item, idx) => (
+              <div key={idx} className="flex justify-between items-center bg-white rounded-xl p-2 mb-2 shadow-sm" style={{borderLeft: `6px solid ${activityMeta[item.type]?.color || '#ccc'}`}}>
+                <div><span className="font-mono text-sm">{item.start} – {item.end}</span> <span className="ml-2">{activityMeta[item.type]?.label || item.title}</span></div>
+                <button onClick={() => deleteScheduleItem(isMe ? myName : otherName, idx)} className="text-red-300 text-xs px-2">🗑️</button>
+              </div>
+            ))}
+          </div>
+        );
+        return (
+          <div className="space-y-4">
+            {renderScheduleList(myName, mySchedule, true)}
+            {otherName && renderScheduleList(otherName, otherSchedule, false)}
+            <div className="bg-white/70 rounded-2xl p-3">
+              <div className="font-bold mb-2">➕ Add to my schedule</div>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <input type="time" value={newItem.start} onChange={e=>setNewItem({...newItem, start:e.target.value})} className="border rounded-xl p-1" />
+                <input type="time" value={newItem.end} onChange={e=>setNewItem({...newItem, end:e.target.value})} className="border rounded-xl p-1" />
+                <select value={newItem.type} onChange={e=>setNewItem({...newItem, type:e.target.value})} className="border rounded-xl p-1">
+                  {Object.keys(activityMeta).map(k => <option key={k} value={k}>{activityMeta[k].label}</option>)}
+                </select>
+                <input placeholder="title" value={newItem.title} onChange={e=>setNewItem({...newItem, title:e.target.value})} className="border rounded-xl p-1" />
+                <button onClick={handleAdd} className="col-span-2 bg-pink-400 text-white rounded-xl py-1">Add</button>
+              </div>
+            </div>
+          </div>
+        );
+      };
+
+      // 统计页面
+      const StatsView = () => {
+        const minutesToHours = (min) => (min/60).toFixed(1);
+        const handleEdit = () => {
+          setTempStats({...myStats});
+          setEditStatsMode(true);
+        };
+        if (editStatsMode) {
+          return (
+            <div className="bg-white rounded-2xl p-4">
+              <h3 className="font-bold mb-3">✏️ Edit your today's stats (hours)</h3>
+              {Object.keys(myStats).map(k => (
+                <div key={k} className="flex justify-between items-center mb-2">
+                  <span>{activityMeta[k]?.label || k}</span>
+                  <input type="number" step="0.1" value={tempStats[k]/60} onChange={e=>setTempStats({...tempStats, [k]: parseFloat(e.target.value)*60})} className="border rounded-xl w-24 p-1" />
+                </div>
+              ))}
+              <div className="flex gap-2 mt-3">
+                <button onClick={saveStatsOverride} className="bg-green-400 text-white px-4 py-1 rounded-xl">Save</button>
+                <button onClick={()=>setEditStatsMode(false)} className="bg-gray-300 px-4 py-1 rounded-xl">Cancel</button>
+              </div>
+            </div>
+          );
+        }
+        return (
+          <div className="space-y-5">
+            <div className="bg-white rounded-2xl p-4">
+              <div className="flex justify-between items-center"><h3 className="font-bold">📊 My Day Summary</h3><button onClick={handleEdit} className="text-xs text-pink-500">✏️ Adjust</button></div>
+              {Object.entries(myStats).map(([k, minutes]) => (
+                <div key={k} className="flex justify-between mt-2"><span>{activityMeta[k]?.label || k}</span><span>{minutesToHours(minutes)} hours</span></div>
+              ))}
+              <div className="mt-2 text-sm text-gray-400">Based on schedule + your manual edits</div>
+            </div>
+            <div className="bg-white rounded-2xl p-4">
+              <h3 className="font-bold">💞 Partner's Day</h3>
+              {Object.entries(otherStats).map(([k, minutes]) => (
+                <div key={k} className="flex justify-between mt-2"><span>{activityMeta[k]?.label || k}</span><span>{minutesToHours(minutes)} hours</span></div>
+              ))}
+            </div>
+          </div>
+        );
+      };
+
+      // 聊天对话框
+      const ChatView = () => {
+        const [newMsg, setNewMsg] = useState('');
+        const send = () => { sendMessage(newMsg); setNewMsg(''); };
+        return (
+          <div className="flex flex-col h-[70vh]">
+            <div className="flex-1 overflow-y-auto space-y-2 mb-3">
+              {messages.map((msg, idx) => (
+                <div key={idx} className={`flex ${msg.user === myName ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`max-w-[80%] rounded-2xl p-3 ${msg.user === myName ? 'bg-pink-200 text-right' : 'bg-white border'}`}>
+                    <div className="text-xs font-bold">{msg.user}</div>
+                    <div>{msg.text}</div>
+                    <div className="text-[10px] text-gray-400 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex gap-2">
+              <input value={newMsg} onChange={e=>setNewMsg(e.target.value)} placeholder="Say something..." className="flex-1 border rounded-2xl p-2 bg-white" />
+              <button onClick={send} className="bg-purple-400 text-white px-4 rounded-2xl">Send</button>
+            </div>
+          </div>
+        );
+      };
+
+      // Profile 页面
+      const ProfileView = () => {
+        const sinceDate = new Date(partnerSince || Date.now()).toDateString();
+        return (
+          <div className="space-y-4">
+            <div className="bg-white rounded-2xl p-4 text-center">
+              <div className="text-5xl mb-2">👩‍❤️‍👨</div>
+              <div className="text-xl font-bold">{myName} ❤️ {otherName || '???'}</div>
+              <div className="text-gray-500">Room: {room}</div>
+              <div className="mt-4 p-3 bg-pink-50 rounded-2xl">
+                <div className="font-semibold">🎂 Together since</div>
+                <div>{sinceDate}</div>
+                {canEditSince && (
+                  <div className="mt-2"><input type="date" onChange={e=>setNewSinceDate(e.target.value)} className="border rounded p-1 text-sm" /><button onClick={handleEditPartnerSince} className="ml-2 bg-pink-300 text-sm px-2 py-1 rounded">Update (once)</button></div>
+                )}
+              </div>
+              <div className="mt-2 text-sm text-gray-400">✨ Co-creation space ✨</div>
+            </div>
+          </div>
+        );
+      };
+
+      return (
+        <div className="min-h-screen pb-20">
+          <div className="max-w-md mx-auto px-4 pt-6">
+            {activeTab === 'home' && <HomeView />}
+            {activeTab === 'schedule' && <ScheduleView />}
+            {activeTab === 'stats' && <StatsView />}
+            {activeTab === 'chat' && <ChatView />}
+            {activeTab === 'profile' && <ProfileView />}
+          </div>
+          {/* 底部导航 */}
+          <div className="fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-md border-t border-pink-200 flex justify-around items-center py-2 max-w-md mx-auto rounded-t-3xl shadow-lg">
+            {[
+              { key:'home', icon:'🏠', label:'Home' },
+              { key:'schedule', icon:'📅', label:'Schedule' },
+              { key:'stats', icon:'📊', label:'Stats' },
+              { key:'chat', icon:'💬', label:'Chat' },
+              { key:'profile', icon:'👤', label:'Profile' }
+            ].map(tab => (
+              <button key={tab.key} onClick={()=>setActiveTab(tab.key)} className={`flex flex-col items-center px-3 py-1 rounded-full transition ${activeTab===tab.key ? 'text-pink-600 bg-pink-100' : 'text-gray-400'}`}>
+                <span className="text-2xl">{tab.icon}</span>
+                <span className="text-xs">{tab.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    };
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
